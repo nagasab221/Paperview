@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Roots FileProvider may hand out as content:// URIs.
+
+     Every directory the app shares from must appear here or
+     FileProvider.getUriForFile throws "failed to find configured root" and the
+     share silently fails. Declaring the cache root wholesale rather than naming
+     individual subdirectories avoids that: cache/share (documents prepared for
+     sharing), cache/tools (tool output) and cache/covers are all covered.
+     Backblaze downloads live in filesDir/cloud, under files-path. -->
+<paths>
+    <cache-path name="cache" path="." />
+    <files-path name="files" path="." />
+    <external-path name="external" path="." />
+</paths>

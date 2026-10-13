@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Legacy backup config (API 26-30).
+
+     DataStore lives in files/datastore/, not sharedpref. It holds the Recent
+     list *and* the Backblaze application key in plain text, and this old API
+     can't distinguish a cloud backup from a device transfer — so it stays out
+     of backups entirely rather than risk shipping credentials off-device.
+     The download cache is excluded because it is re-downloadable by definition,
+     and the shelf because it holds copies of documents the reader opened — up to
+     200 MB of private reading that has no business leaving the device. -->
+<full-backup-content>
+    <include domain="file" path="." />
+    <exclude domain="file" path="datastore/" />
+    <exclude domain="file" path="cloud/" />
+    <exclude domain="file" path="shelf/" />
+</full-backup-content>

@@ -1,0 +1,10 @@
+# Keep line endings sane across platforms. `gradlew` is a shell script: if it
+# is checked out with CRLF it fails to run on Linux and macOS, so normalise
+# everything to LF and let only the Windows batch file keep CRLF.
+* text=auto eol=lf
+*.bat text eol=crlf
+
+*.jar binary
+*.pdf binary
+*.png binary
+*.apk binary

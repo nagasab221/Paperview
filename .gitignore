@@ -1,0 +1,13 @@
+*.iml
+.gradle/
+.kotlin/
+local.properties
+.idea/
+.DS_Store
+build/
+captures/
+.externalNativeBuild
+.cxx
+
+# Packaged release APKs — these belong in a GitHub Release, not in history
+dist/

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- PaperView paper white (#EEF2F6) — same value as the desktop icon. -->
+    <color name="launch_background">#EEF2F6</color>
+    <color name="ic_launcher_background">#2D7DD2</color>
+</resources>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- API 31+. Settings and the Recent list live in files/datastore/, alongside
+     the Backblaze application key. A device transfer goes straight to the
+     user's new phone, so that's fine to include; a cloud backup leaves the
+     device, so credentials are held back. The download cache is re-downloadable
+     and never worth carrying. The shelf holds copies of documents the reader
+     opened: those go to a new phone with the Recent list that points at them,
+     but never into a cloud backup. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="file" path="." />
+        <exclude domain="file" path="datastore/" />
+        <exclude domain="file" path="cloud/" />
+        <exclude domain="file" path="shelf/" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="file" path="." />
+        <exclude domain="file" path="cloud/" />
+    </device-transfer>
+</data-extraction-rules>

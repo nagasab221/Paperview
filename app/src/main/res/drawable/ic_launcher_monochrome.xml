@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The themed-icon layer, used when the launcher tints every app to one colour
+     (Android 13+ themed icons; "apply palette to app icons" on One UI).
+
+     This cannot be the colour foreground. The system throws that drawable's
+     colours away and paints every opaque pixel in the theme's single colour, so
+     a page body drawn as a large *filled* shape turns into one solid slab, and
+     the fold, the text hints and the PDF badge sitting on top of it dissolve
+     into that slab — a featureless blob.
+
+     So the detail here comes from empty space instead of from colour: the page
+     is an outline, and the one solid mass is the folded flap. Same shape
+     language as the colour icon, minus the badge, which could only ever be
+     another blob once it loses its fill.
+
+     Artwork is centred on 54,54 and kept inside the 66dp circle the themed-icon
+     spec asks for — tighter than the 72dp adaptive safe zone, because this layer
+     is scaled up further. The ink colour below is ignored at runtime; only alpha
+     matters. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Page body, outlined, with the top-right corner cut for the fold. -->
+    <path
+        android:strokeColor="#000000"
+        android:strokeWidth="5"
+        android:pathData="M36,32 L60,32 L72,44 L72,76 L36,76 Z" />
+
+    <!-- The flap tucked into the cut corner: the only filled shape. -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M60,32 L72,44 L60,44 Z" />
+
+    <!-- Text hints. -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M45,50 L63,50 L63,53.5 L45,53.5 Z" />
+    <path
+        android:fillColor="#000000"
+        android:pathData="M45,57.5 L63,57.5 L63,61 L45,61 Z" />
+    <path
+        android:fillColor="#000000"
+        android:pathData="M45,65 L57,65 L57,68.5 L45,68.5 Z" />
+</vector>

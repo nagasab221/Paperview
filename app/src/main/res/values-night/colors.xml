@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Desktop dark viewport is egui's gray(32). -->
+    <color name="launch_background">#202020</color>
+</resources>
