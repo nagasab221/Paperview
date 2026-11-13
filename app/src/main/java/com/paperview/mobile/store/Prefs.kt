@@ -28,6 +28,7 @@ class Prefs(private val context: Context) {
         val B2_KEY_ID = stringPreferencesKey("b2_key_id")
         val B2_APP_KEY = stringPreferencesKey("b2_app_key")
         val B2_BUCKET = stringPreferencesKey("b2_bucket")
+        val B2_ENABLED = booleanPreferencesKey("b2_enabled")
         val ALL_FILES = booleanPreferencesKey("all_files_browser")
         val KEEP_AWAKE = booleanPreferencesKey("keep_awake")
         val PAGE_FIT = intPreferencesKey("page_fit")
@@ -35,6 +36,8 @@ class Prefs(private val context: Context) {
         val SKIN = stringPreferencesKey("skin")
         val SHELF_CONSOLIDATED = booleanPreferencesKey("shelf_consolidated")
         val SCAN_FILTER = stringPreferencesKey("scan_filter")
+        val PEEK_SPOTS = stringPreferencesKey("peek_spots")
+        val PEEK_TIPS = intPreferencesKey("peek_tips")
     }
 
     private fun <T> flowOf(key: Preferences.Key<T>, fallback: T): Flow<T> =
@@ -49,6 +52,12 @@ class Prefs(private val context: Context) {
     val b2KeyId: Flow<String> = flowOf(Keys.B2_KEY_ID, "")
     val b2AppKey: Flow<String> = flowOf(Keys.B2_APP_KEY, "")
     val b2Bucket: Flow<String> = flowOf(Keys.B2_BUCKET, "")
+
+    /**
+     * Whether the Library shows its Cloud tab. On by default so a bucket that
+     * was already set up keeps appearing; it still needs saved credentials.
+     */
+    val b2Enabled: Flow<Boolean> = flowOf(Keys.B2_ENABLED, true)
     val allFilesBrowser: Flow<Boolean> = flowOf(Keys.ALL_FILES, false)
     val keepAwake: Flow<Boolean> = flowOf(Keys.KEEP_AWAKE, false)
     val toolHistoryRaw: Flow<String> = flowOf(Keys.TOOL_HISTORY, "")
@@ -56,6 +65,12 @@ class Prefs(private val context: Context) {
 
     /** The cleanup applied to a new scan; remembered between captures. */
     val scanFilter: Flow<String> = flowOf(Keys.SCAN_FILTER, "document")
+
+    /** Saved peek spots, one per document; see [PeekSpots]. */
+    val peekSpotsRaw: Flow<String> = flowOf(Keys.PEEK_SPOTS, "")
+
+    /** How many times the "hold to peek" tip has been shown. */
+    val peekTips: Flow<Int> = flowOf(Keys.PEEK_TIPS, 0)
 
     /** Whether shelf copies have been renamed by content and the list deduped. */
     val shelfConsolidated: Flow<Boolean> = flowOf(Keys.SHELF_CONSOLIDATED, false)
@@ -72,6 +87,9 @@ class Prefs(private val context: Context) {
     suspend fun setSkin(value: String) = put(Keys.SKIN, value)
     suspend fun setShelfConsolidated(value: Boolean) = put(Keys.SHELF_CONSOLIDATED, value)
     suspend fun setScanFilter(value: String) = put(Keys.SCAN_FILTER, value)
+    suspend fun setB2Enabled(value: Boolean) = put(Keys.B2_ENABLED, value)
+    suspend fun setPeekSpotsRaw(value: String) = put(Keys.PEEK_SPOTS, value)
+    suspend fun setPeekTips(value: Int) = put(Keys.PEEK_TIPS, value)
 
     suspend fun setB2(keyId: String, appKey: String, bucket: String) {
         context.dataStore.edit {

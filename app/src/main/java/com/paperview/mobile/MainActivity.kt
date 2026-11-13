@@ -114,6 +114,9 @@ class MainActivity : ComponentActivity() {
 
             var route by remember { mutableStateOf(Route.Shell) }
             var tab by remember { mutableStateOf(Tab.Library) }
+            // Held here, not in the Library, so returning from a document
+            // opened off the Cloud page lands back on Cloud.
+            var libraryPage by remember { mutableStateOf(0) }
             var recents by remember { mutableStateOf<List<RecentEntry>>(emptyList()) }
             var toolHistory by remember { mutableStateOf<List<ToolId>>(emptyList()) }
             var isDefaultApp by remember { mutableStateOf(false) }
@@ -369,6 +372,8 @@ class MainActivity : ComponentActivity() {
                                     Tab.Library -> LandingScreen(
                                         recents = recents,
                                         cloud = cloud,
+                                        page = libraryPage,
+                                        onPageChange = { libraryPage = it },
                                         onOpenPicker = {
                                             openPicker.launch(FileAccess.openDocumentIntent())
                                         },
@@ -487,7 +492,9 @@ class MainActivity : ComponentActivity() {
                                 onSaveAs = {
                                     saveAsPicker.launch(FileAccess.createDocumentIntent(viewer.title))
                                 },
-                                onUploadToCloud = { uploadCurrent() },
+                                onUploadToCloud = if (cloud.active) {
+                                    { uploadCurrent() }
+                                } else null,
                                 onOpenSettings = { route = Route.Shell; tab = Tab.Settings },
                             ),
                         )

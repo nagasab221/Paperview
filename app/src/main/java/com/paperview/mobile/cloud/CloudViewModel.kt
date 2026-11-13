@@ -46,6 +46,13 @@ class CloudViewModel(app: Application) : AndroidViewModel(app) {
     var config by mutableStateOf(B2Config())
         private set
 
+    /** The user's on/off switch for the cloud, independent of the credentials. */
+    var enabled by mutableStateOf(true)
+        private set
+
+    /** Credentials saved and the switch on: the Cloud tab and uploads are offered. */
+    val active: Boolean get() = enabled && config.ready
+
     val files = mutableStateListOf<CloudFile>()
     var status by mutableStateOf("")
         private set
@@ -106,6 +113,7 @@ class CloudViewModel(app: Application) : AndroidViewModel(app) {
             combine(prefs.b2KeyId, prefs.b2AppKey, prefs.b2Bucket) { k, a, b -> B2Config(k, a, b) }
                 .collect { config = it }
         }
+        viewModelScope.launch { prefs.b2Enabled.collect { enabled = it } }
         viewModelScope.launch { drainQueue() }
         refreshCacheStats()
         refreshCached()
@@ -119,6 +127,11 @@ class CloudViewModel(app: Application) : AndroidViewModel(app) {
             loadedOnce = false
             if (config.ready) refresh()
         }
+    }
+
+    fun setCloudEnabled(on: Boolean) {
+        enabled = on
+        viewModelScope.launch { prefs.setB2Enabled(on) }
     }
 
     fun refresh() = enqueue(CloudOp.Refresh)

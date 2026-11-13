@@ -94,6 +94,10 @@ fun PdfViewport(
     val fallbackVersion = remember { mutableIntStateOf(0) }
     val version by (cache?.version ?: fallbackVersion)
 
+    // The view is being moved for the reader (a peek): a fling still coasting
+    // would otherwise carry on from the new spot.
+    LaunchedEffect(vm.interruptFling) { flingJob.value?.cancel() }
+
     // Navigation asked for a jump — apply it once and clear the request.
     LaunchedEffect(vm.pendingScroll) {
         vm.pendingScroll?.let {
@@ -431,6 +435,11 @@ private suspend fun PointerInputScope.viewportGestures(
         var lastMoveMs = down.uptimeMillis
         var releaseMs = down.uptimeMillis
         var lastMovePos = down.position
+        // The tracked finger's recent (time, y), to check the tracker's answer
+        // against what the finger visibly did before trusting it with a fling.
+        val recent = ArrayDeque<Pair<Long, Float>>()
+        recent.addLast(down.uptimeMillis to down.position.y)
+        var lastSampleMs = down.uptimeMillis
 
         do {
             val event = awaitPointerEvent()
@@ -455,6 +464,7 @@ private suspend fun PointerInputScope.viewportGestures(
             if (pressed.size > 1) {
                 // A genuine pinch: no single finger's velocity means anything.
                 tracker.resetTracking()
+                recent.clear()
             } else {
                 // Note `pressed` is EMPTY on the final up event. Treating that
                 // like a pinch and resetting here wiped the history one moment
@@ -468,10 +478,23 @@ private suspend fun PointerInputScope.viewportGestures(
                         // A different finger is carrying the gesture now; its
                         // history has nothing to do with the old one's.
                         tracker.resetTracking()
+                        recent.clear()
                         trackedPointer = finger.id
                         lastMovePos = finger.position
                     }
-                    tracker.addPosition(finger.uptimeMillis, finger.position)
+                    // Some touchscreens report two points in the same
+                    // millisecond. After a pause the tracker discards older
+                    // history, and dividing by that zero-length interval read a
+                    // finger creeping along at 50px/s as 44,000px/s, in either
+                    // direction — the slow-read-then-lift fling to the top.
+                    if (recent.isEmpty() || finger.uptimeMillis > lastSampleMs) {
+                        tracker.addPosition(finger.uptimeMillis, finger.position)
+                        recent.addLast(finger.uptimeMillis to finger.position.y)
+                        lastSampleMs = finger.uptimeMillis
+                        while (recent.size > 2 &&
+                            finger.uptimeMillis - recent.first().first > RECENT_KEEP_MS
+                        ) recent.removeFirst()
+                    }
                     releaseMs = finger.uptimeMillis
                     if ((finger.position - lastMovePos).getDistance() > MOVED_PX) {
                         lastMoveMs = finger.uptimeMillis
@@ -545,14 +568,22 @@ private suspend fun PointerInputScope.viewportGestures(
             !sawMultiTouch &&
             flingIsLive(lastMoveMs, releaseMs)
         if (mayFling) {
-            val velocity = runCatching { tracker.calculateVelocity() }.getOrNull()
-            velocity?.y?.takeIf { abs(it) > MIN_FLING }?.let { onFling(it * FLING_BOOST) }
+            val tracked = runCatching { tracker.calculateVelocity() }.getOrNull()?.y ?: 0f
+            val velocity = settleFlingVelocity(
+                tracked = tracked,
+                recent = recent.toList(),
+                maxVelocity = viewConfiguration.maximumFlingVelocity,
+            )
+            if (abs(velocity) > MIN_FLING) onFling(velocity * FLING_BOOST)
         }
     }
 }
 
 /** Travel, as a multiple of the touch slop, before a drag commits to an axis. */
 private const val AXIS_COMMIT = 1.25f
+
+/** How much finger history to keep for [settleFlingVelocity]; a little over its window. */
+private const val RECENT_KEEP_MS = 150L
 
 /** Movement below this is jitter, not a finger that is still travelling. */
 private const val MOVED_PX = 1f

@@ -2,6 +2,8 @@ package com.paperview.mobile.viewer
 
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.sign
 
 /** Which direction a drag has committed to. */
 internal enum class Axis { Undecided, Vertical, Horizontal, Free }
@@ -105,3 +107,40 @@ internal fun flingIsLive(lastMoveMs: Long, releaseMs: Long): Boolean =
 
 /** Longest pause before a lift that still counts as a flick. */
 internal const val STALE_FLING_MS = 70L
+
+/**
+ * The fling velocity to actually use, given the tracker's estimate and the
+ * finger's last few (time, y) samples.
+ *
+ * The tracker extrapolates from a handful of points and can be wildly wrong —
+ * after a pause, with two samples in the same millisecond, it returned a speed
+ * hundreds of times the finger's and sometimes in the opposite direction. So
+ * its answer is checked against what the finger visibly did over the last
+ * [FLING_WINDOW_MS]: no fling if they disagree on direction, and never more
+ * than [OBSERVED_HEADROOM] times the observed speed (a flick is still speeding
+ * up as it leaves, so its end speed beats its average), nor the platform max.
+ */
+internal fun settleFlingVelocity(
+    tracked: Float,
+    recent: List<Pair<Long, Float>>,
+    maxVelocity: Float,
+): Float {
+    if (!tracked.isFinite() || tracked == 0f || recent.size < 2) return 0f
+    val end = recent.last()
+    val start = recent.firstOrNull { end.first - it.first <= FLING_WINDOW_MS } ?: return 0f
+    val spanMs = end.first - start.first
+    if (spanMs < MIN_FLING_WINDOW_MS) return 0f
+    val observed = (end.second - start.second) / spanMs * 1000f
+    if (observed == 0f || sign(observed) != sign(tracked)) return 0f
+    val cap = if (maxVelocity > 0f && maxVelocity.isFinite()) maxVelocity else Float.MAX_VALUE
+    return sign(tracked) * min(min(abs(tracked), abs(observed) * OBSERVED_HEADROOM), cap)
+}
+
+/** How far back [settleFlingVelocity] looks at the finger's real movement. */
+internal const val FLING_WINDOW_MS = 100L
+
+/** Shortest stretch of movement that says anything about speed. */
+internal const val MIN_FLING_WINDOW_MS = 16L
+
+/** How much faster than its recent average a flick may be judged to end. */
+internal const val OBSERVED_HEADROOM = 2f

@@ -53,6 +53,15 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.TabRowDefaults
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import com.paperview.mobile.cloud.B2Client
 import com.paperview.mobile.cloud.CloudViewModel
 import com.paperview.mobile.store.RecentEntry
@@ -67,14 +76,17 @@ import java.text.DateFormat
 import java.util.Date
 
 /**
- * The Library: your documents as a shelf of first-page covers, with the
- * Backblaze bucket underneath as its own section rather than a second tab.
+ * The Library: Recents (your documents as a shelf of first-page covers) and,
+ * once a Backblaze bucket is set up and switched on, a Cloud page beside it.
+ * The title and tab bar stay put; the pages swipe underneath.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun LandingScreen(
     recents: List<RecentEntry>,
     cloud: CloudViewModel,
+    page: Int,
+    onPageChange: (Int) -> Unit,
     onOpenPicker: () -> Unit,
     onOpenRecent: (RecentEntry) -> Unit,
     onForgetRecent: (RecentEntry) -> Unit,
@@ -84,46 +96,132 @@ fun LandingScreen(
     contentPadding: PaddingValues = PaddingValues(0.dp),
 ) {
     val colors = PaperTheme.colors
-    LaunchedEffect(cloud.config) {
-        // Re-read the disk every time the tab appears: a download from another
-        // screen, or a file removed, should be reflected without a network call.
-        cloud.refreshCached()
-        cloud.listIfReady()
-    }
+    val showCloud = cloud.active
+    val scope = rememberCoroutineScope()
+    val pager = rememberPagerState(
+        initialPage = if (showCloud) page.coerceIn(0, 1) else 0,
+        pageCount = { if (showCloud) 2 else 1 },
+    )
 
+    LaunchedEffect(cloud.config, showCloud) {
+        // Re-read the disk every time the Library appears: a download from
+        // another screen, or a file removed, should show without a network call.
+        cloud.refreshCached()
+        if (showCloud) cloud.listIfReady() else if (pager.currentPage != 0) pager.scrollToPage(0)
+    }
+    LaunchedEffect(pager.currentPage) { onPageChange(pager.currentPage) }
+
+    val onCloudPage = showCloud && pager.currentPage == 1
+
+    Column(Modifier.fillMaxSize().background(colors.background)) {
+        PaperMasthead(
+            title = "Library",
+            subtitle = when {
+                onCloudPage -> cloud.config.bucket
+                recents.isEmpty() -> null
+                else -> "${recents.size} document${if (recents.size == 1) "" else "s"}"
+            },
+            modifier = Modifier.padding(horizontal = 20.dp),
+            actions = {
+                Row {
+                    onBrowseFiles?.let {
+                        IconButton(onClick = it) {
+                            Icon(Icons.Outlined.FolderOpen, "Browse files", tint = colors.ink)
+                        }
+                    }
+                    IconButton(onClick = onOpenPicker) {
+                        Icon(Icons.Outlined.Add, "Open a PDF", tint = colors.ink)
+                    }
+                }
+            },
+        )
+
+        if (showCloud) {
+            LibraryTabs(
+                selected = pager.currentPage,
+                onSelect = { scope.launch { pager.animateScrollToPage(it) } },
+            )
+        }
+
+        HorizontalPager(
+            state = pager,
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            verticalAlignment = Alignment.Top,
+            key = { it },
+        ) { index ->
+            if (index == 0) {
+                RecentsPage(
+                    recents = recents,
+                    onOpenPicker = onOpenPicker,
+                    onOpenRecent = onOpenRecent,
+                    onForgetRecent = onForgetRecent,
+                    contentPadding = contentPadding,
+                )
+            } else {
+                CloudPage(
+                    cloud = cloud,
+                    onOpenFile = onOpenCloudFile,
+                    onOpenLocal = onOpenLocalFile,
+                    contentPadding = contentPadding,
+                )
+            }
+        }
+    }
+}
+
+/** Recents | Cloud, as text tabs over a hairline with an accent underline. */
+@Composable
+private fun LibraryTabs(selected: Int, onSelect: (Int) -> Unit) {
+    val colors = PaperTheme.colors
+    TabRow(
+        selectedTabIndex = selected,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+        containerColor = colors.background,
+        contentColor = colors.accent,
+        indicator = { positions ->
+            if (selected < positions.size) {
+                TabRowDefaults.SecondaryIndicator(
+                    Modifier.tabIndicatorOffset(positions[selected]),
+                    height = 2.dp,
+                    color = colors.accent,
+                )
+            }
+        },
+        divider = { Hairline() },
+    ) {
+        listOf("Recents", "Cloud").forEachIndexed { i, label ->
+            Tab(
+                selected = selected == i,
+                onClick = { onSelect(i) },
+                selectedContentColor = colors.accent,
+                unselectedContentColor = colors.muted,
+                text = { Text(label, style = MaterialTheme.typography.titleSmall) },
+            )
+        }
+    }
+}
+
+/** The shelf of covers. */
+@Composable
+private fun RecentsPage(
+    recents: List<RecentEntry>,
+    onOpenPicker: () -> Unit,
+    onOpenRecent: (RecentEntry) -> Unit,
+    onForgetRecent: (RecentEntry) -> Unit,
+    contentPadding: PaddingValues,
+) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(148.dp),
-        modifier = Modifier.fillMaxSize().background(colors.background),
+        modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(
             start = 20.dp,
             end = 20.dp,
-            top = contentPadding.calculateTopPadding(),
+            top = 18.dp,
             bottom = contentPadding.calculateBottomPadding() + 32.dp,
         ),
         horizontalArrangement = Arrangement.spacedBy(18.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        item(span = { GridItemSpan(maxLineSpan) }) {
-            PaperMasthead(
-                title = "Library",
-                subtitle = if (recents.isEmpty()) null else {
-                    "${recents.size} document${if (recents.size == 1) "" else "s"}"
-                },
-                actions = {
-                    Row {
-                        onBrowseFiles?.let {
-                            IconButton(onClick = it) {
-                                Icon(Icons.Outlined.FolderOpen, "Browse files", tint = colors.ink)
-                            }
-                        }
-                        IconButton(onClick = onOpenPicker) {
-                            Icon(Icons.Outlined.Add, "Open a PDF", tint = colors.ink)
-                        }
-                    }
-                },
-            )
-        }
-
         if (recents.isEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }) {
                 PaperEmptyState(
@@ -134,7 +232,6 @@ fun LandingScreen(
                 )
             }
         } else {
-            item(span = { GridItemSpan(maxLineSpan) }) { SectionHeading("On your shelf") }
             items(recents, key = { it.uri }) { entry ->
                 CoverTile(
                     entry = entry,
@@ -143,24 +240,34 @@ fun LandingScreen(
                 )
             }
         }
+    }
+}
 
-        item(span = { GridItemSpan(maxLineSpan) }) {
+/** The Backblaze bucket and whatever of it is already downloaded. */
+@Composable
+private fun CloudPage(
+    cloud: CloudViewModel,
+    onOpenFile: (String, Long) -> Unit,
+    onOpenLocal: (java.io.File) -> Unit,
+    contentPadding: PaddingValues,
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(
+            start = 20.dp,
+            end = 20.dp,
+            bottom = contentPadding.calculateBottomPadding() + 32.dp,
+        ),
+    ) {
+        item {
             SectionHeading(
                 "Saved to cloud",
                 trailing = {
-                    if (cloud.config.ready) {
-                        InlineTextButton("Refresh", enabled = !cloud.busy) { cloud.refresh() }
-                    }
+                    InlineTextButton("Refresh", enabled = !cloud.busy) { cloud.refresh() }
                 },
             )
         }
-        item(span = { GridItemSpan(maxLineSpan) }) {
-            CloudSection(
-                cloud = cloud,
-                onOpenFile = onOpenCloudFile,
-                onOpenLocal = onOpenLocalFile,
-            )
-        }
+        item { CloudSection(cloud = cloud, onOpenFile = onOpenFile, onOpenLocal = onOpenLocal) }
     }
 }
 

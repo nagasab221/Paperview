@@ -77,6 +77,23 @@ import com.paperview.mobile.pdf.snapPx
 import com.paperview.mobile.ui.components.Hairline
 import com.paperview.mobile.ui.theme.PaperTheme
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.automirrored.outlined.Undo
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Actions the viewer hands back to the host activity — things that need an
@@ -87,7 +104,8 @@ data class ViewerActions(
     val onPrint: () -> Unit,
     val onShare: () -> Unit,
     val onSaveAs: () -> Unit,
-    val onUploadToCloud: () -> Unit,
+    /** Null while the cloud is off or not set up: the menu item is hidden. */
+    val onUploadToCloud: (() -> Unit)?,
     val onOpenSettings: () -> Unit,
 )
 
@@ -334,13 +352,16 @@ private fun BottomBar(vm: ViewerViewModel, onPageTap: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                // The page indicator reads as a caption, not a button.
-                TextButton(onClick = onPageTap) {
-                    Text(
-                        "${vm.currentPage + 1} of ${vm.pageCount}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = colors.ink,
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // The page indicator reads as a caption, not a button.
+                    TextButton(onClick = onPageTap) {
+                        Text(
+                            "${vm.currentPage + 1} of ${vm.pageCount}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = colors.ink,
+                        )
+                    }
+                    if (vm.peekSpot != null) PeekButton(vm)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     ZoomAction("Fit") { vm.applyZoom(Zoom.FitPage) }
@@ -352,6 +373,92 @@ private fun BottomBar(vm: ViewerViewModel, onPageTap: () -> Unit) {
         }
     }
 }
+
+/**
+ * The peek button. A tap jumps to the saved spot and the next tap comes back;
+ * holding shows the spot only for as long as the finger stays down, then puts
+ * the view back exactly where it was.
+ */
+@Composable
+private fun PeekButton(vm: ViewerViewModel) {
+    val colors = PaperTheme.colors
+    val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+    // When a tap last jumped to the spot. Coming straight back by tapping
+    // again is exactly what holding does, so that's when the tip is useful.
+    var jumpedAt by remember { mutableStateOf(0L) }
+
+    val onTap by rememberUpdatedState {
+        val now = android.os.SystemClock.uptimeMillis()
+        if (vm.togglePeekJump()) {
+            jumpedAt = now
+        } else if (now - jumpedAt < QUICK_RETURN_MS) {
+            scope.launch {
+                if (vm.takePeekTip(limit = 3)) {
+                    android.widget.Toast.makeText(
+                        context,
+                        "Tip: press and hold the eye to peek. Let go and you're right back.",
+                        android.widget.Toast.LENGTH_LONG,
+                    ).show()
+                }
+            }
+        }
+    }
+
+    val active = vm.peeking || vm.peekAway
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(if (vm.peeking) colors.accent.copy(alpha = 0.18f) else Color.Transparent)
+            .semantics {
+                role = Role.Button
+                contentDescription = if (vm.peekAway) "Back from peek spot" else "Peek"
+            }
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown().consume()
+                    var lifted = false
+                    // Up before the hold delay is a tap; still down after it is a peek.
+                    val early = withTimeoutOrNull(HOLD_TO_PEEK_MS) {
+                        lifted = waitForUpOrCancellation() != null
+                        true
+                    }
+                    if (early != null) {
+                        if (lifted) onTap()
+                        return@awaitEachGesture
+                    }
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    vm.beginPeek()
+                    try {
+                        // Follow the finger anywhere, not just over the button:
+                        // sliding off it while reading the answer mustn't end the peek.
+                        do {
+                            val event = awaitPointerEvent()
+                            event.changes.forEach { it.consume() }
+                        } while (event.changes.any { it.pressed })
+                    } finally {
+                        vm.endPeek()
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            if (vm.peekAway) Icons.AutoMirrored.Outlined.Undo else Icons.Outlined.Visibility,
+            contentDescription = null,
+            tint = if (active) colors.accent else colors.ink,
+            modifier = Modifier.size(22.dp),
+        )
+    }
+}
+
+/** How long the peek button must be held before it peeks instead of jumping. */
+private const val HOLD_TO_PEEK_MS = 220L
+
+/** Tapping back within this long after jumping is a peek done the slow way. */
+private const val QUICK_RETURN_MS = 15_000L
 
 @Composable
 private fun ZoomAction(label: String, onClick: () -> Unit) {
@@ -400,6 +507,7 @@ private fun ViewerMenu(
     onDismiss: () -> Unit,
     actions: ViewerActions,
 ) {
+    val context = LocalContext.current
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
         DropdownMenuItem(
             text = { Text(if (vm.viewMode == ViewMode.Continuous) "Single page" else "Continuous") },
@@ -412,13 +520,36 @@ private fun ViewerMenu(
         DropdownMenuItem(text = { Text("Rotate left") }, onClick = { vm.rotateLeft(); onDismiss() })
         DropdownMenuItem(text = { Text("Rotate right") }, onClick = { vm.rotateRight(); onDismiss() })
         HorizontalDivider()
+        DropdownMenuItem(
+            text = { Text(if (vm.peekSpot == null) "Set peek spot here" else "Move peek spot here") },
+            onClick = {
+                val first = vm.peekSpot == null
+                vm.savePeekSpot()
+                onDismiss()
+                android.widget.Toast.makeText(
+                    context,
+                    if (first) "Peek spot saved. Tap the eye to jump there, hold it to peek."
+                    else "Peek spot moved here",
+                    android.widget.Toast.LENGTH_LONG,
+                ).show()
+            },
+        )
+        if (vm.peekSpot != null) {
+            DropdownMenuItem(
+                text = { Text("Remove peek spot") },
+                onClick = { vm.removePeekSpot(); onDismiss() },
+            )
+        }
+        HorizontalDivider()
         DropdownMenuItem(text = { Text("Print") }, onClick = { actions.onPrint(); onDismiss() })
         DropdownMenuItem(text = { Text("Share") }, onClick = { actions.onShare(); onDismiss() })
         DropdownMenuItem(text = { Text("Save a copy") }, onClick = { actions.onSaveAs(); onDismiss() })
-        DropdownMenuItem(
-            text = { Text("Save to cloud") },
-            onClick = { actions.onUploadToCloud(); onDismiss() },
-        )
+        actions.onUploadToCloud?.let { upload ->
+            DropdownMenuItem(
+                text = { Text("Save to cloud") },
+                onClick = { upload(); onDismiss() },
+            )
+        }
         HorizontalDivider()
         DropdownMenuItem(
             text = { Text("Settings") },

@@ -294,11 +294,37 @@ private fun CloudSettings(cloud: CloudViewModel) {
 
     Column(Modifier.fillMaxWidth().padding(top = 14.dp)) {
         Text(
-            "Used by the cloud section of your Library. Uploads only happen when " +
+            "Used by the Cloud tab of your Library. Uploads only happen when " +
                 "you tap “Save to cloud” while reading.",
             style = MaterialTheme.typography.bodySmall,
             color = colors.muted,
         )
+        Spacer(Modifier.height(6.dp))
+        PaperRow(
+            title = "Cloud tab",
+            subtitle = when {
+                !cloud.config.ready -> "Save your bucket details below to turn this on"
+                cloud.enabled -> "On — Library shows Recents and Cloud"
+                else -> "Off — Library shows Recents only"
+            },
+            icon = Icons.Outlined.CloudQueue,
+            showChevron = false,
+            trailing = {
+                Switch(
+                    checked = cloud.active,
+                    enabled = cloud.config.ready,
+                    onCheckedChange = { cloud.setCloudEnabled(it) },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = colors.onAccent,
+                        checkedTrackColor = colors.accent,
+                        uncheckedThumbColor = colors.muted,
+                        uncheckedTrackColor = colors.background,
+                        uncheckedBorderColor = colors.hairline,
+                    ),
+                )
+            },
+        )
+        Hairline(inset = 37)
         Spacer(Modifier.height(14.dp))
         PaperField(
             value = keyId,

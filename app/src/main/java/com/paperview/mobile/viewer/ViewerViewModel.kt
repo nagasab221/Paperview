@@ -34,12 +34,15 @@ import com.paperview.mobile.pdf.displayWidthPt
 import com.paperview.mobile.pdf.resolveScale
 import com.paperview.mobile.pdf.viewToPage
 import com.paperview.mobile.store.RecentEntry
+import com.paperview.mobile.store.PeekSpot
+import com.paperview.mobile.store.PeekSpots
 import com.paperview.mobile.store.Recents
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
 import kotlin.math.abs
 import kotlin.math.max
+import kotlinx.coroutines.flow.first
 import kotlin.math.min
 
 /** What the viewer is currently showing. */
@@ -176,6 +179,41 @@ class ViewerViewModel(app: Application) : AndroidViewModel(app) {
     val canGoBack: Boolean get() = backStack.isNotEmpty()
     val canGoForward: Boolean get() = forwardStack.isNotEmpty()
 
+    // ── Peek ─────────────────────────────────────────────────────────────────
+
+    /** This document's saved peek spot, or null when none is set. */
+    var peekSpot by mutableStateOf<PeekSpot?>(null)
+        private set
+
+    /** Exactly where the view was, so a peek can put it back to the pixel. */
+    private data class ViewSnapshot(
+        val page: Int,
+        val zoom: Zoom,
+        val scale: Float,
+        val scrollX: Float,
+        val scrollY: Float,
+    )
+
+    /** Where a tap on the peek button jumped from; set while "away". */
+    private var peekReturn by mutableStateOf<ViewSnapshot?>(null)
+
+    /** Where a held peek started; restored on release. */
+    private var holdReturn: ViewSnapshot? = null
+
+    /** True after a tap jumped to the peek spot, until the next tap goes back. */
+    val peekAway: Boolean get() = peekReturn != null
+
+    /** True while the peek button is being held. */
+    var peeking by mutableStateOf(false)
+        private set
+
+    /**
+     * Bumped whenever the view is about to be moved programmatically, so the
+     * viewport can stop a fling that would otherwise drag it straight off.
+     */
+    var interruptFling by mutableIntStateOf(0)
+        private set
+
     // ── Opening ──────────────────────────────────────────────────────────────
 
     fun open(context: Context, src: DocSource, displayName: String, restore: RecentEntry? = null) {
@@ -216,6 +254,7 @@ class ViewerViewModel(app: Application) : AndroidViewModel(app) {
                 zoom = Zoom.from(it.zoom)
                 currentPage = it.page.coerceIn(0, opened.pageCount - 1)
             }
+            peekSpot = PeekSpots.get(prefs, src.key)
             state = DocState.Ready
             recomputeScale()
             if (restore != null && currentPage > 0) pendingScroll = layout.scrollToPage(currentPage)
@@ -236,6 +275,10 @@ class ViewerViewModel(app: Application) : AndroidViewModel(app) {
         linkCache.clear()
         backStack.clear()
         forwardStack.clear()
+        peekSpot = null
+        peekReturn = null
+        holdReturn = null
+        peeking = false
         clearSearch()
         clearSelection()
     }
@@ -266,6 +309,9 @@ class ViewerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun persistState() {
+        // Mid-peek the view is somewhere the reader is only glancing at;
+        // remembering it as "where you left off" would be wrong.
+        if (peeking) return
         val entry = snapshot() ?: return
         viewModelScope.launch { Recents.record(prefs, entry) }
     }
@@ -476,6 +522,109 @@ class ViewerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun nextPage() = goToPage(currentPage + 1)
+
+    // ── Peek ─────────────────────────────────────────────────────────────────
+
+    /** Saves what is on screen now as this document's peek spot. */
+    fun savePeekSpot() {
+        val src = source ?: return
+        val l = layout
+        if (l.count == 0) return
+        // The page under the top edge of the screen anchors the spot.
+        val anchor = if (viewMode == ViewMode.Single) currentPage else {
+            var i = 0
+            while (i + 1 < l.count && l.pageTopPx(i + 1) <= scrollY) i++
+            i
+        }
+        val spot = PeekSpot(
+            page = anchor,
+            yFrac = (scrollY - l.pageTopPx(anchor)) / l.pageHeightPx(anchor).coerceAtLeast(1f),
+            xFrac = if (l.contentWidthPx > 0f) scrollX / l.contentWidthPx else 0f,
+            zoom = zoom.key,
+        )
+        peekSpot = spot
+        // Saving here means "here" is the spot now: there is nothing to go back to.
+        peekReturn = null
+        viewModelScope.launch { PeekSpots.put(prefs, src.key, spot) }
+    }
+
+    fun removePeekSpot() {
+        val src = source ?: return
+        peekSpot = null
+        peekReturn = null
+        viewModelScope.launch { PeekSpots.remove(prefs, src.key) }
+    }
+
+    /**
+     * A tap on the peek button: go to the spot, or, if a tap already took you
+     * there, come back. Returns true when it jumped *to* the spot.
+     */
+    fun togglePeekJump(): Boolean {
+        val spot = peekSpot ?: return false
+        val back = peekReturn
+        return if (back != null) {
+            restoreView(back)
+            peekReturn = null
+            false
+        } else {
+            peekReturn = captureView()
+            showSpot(spot)
+            true
+        }
+    }
+
+    /** Button pressed and held: show the spot until [endPeek]. */
+    fun beginPeek() {
+        val spot = peekSpot ?: return
+        if (peeking) return
+        holdReturn = captureView()
+        peeking = true
+        showSpot(spot)
+    }
+
+    /** Button released: back to exactly where the reader was. */
+    fun endPeek() {
+        holdReturn?.let { restoreView(it) }
+        holdReturn = null
+        peeking = false
+    }
+
+    private fun captureView() = ViewSnapshot(currentPage, zoom, scale, scrollX, scrollY)
+
+    private fun restoreView(v: ViewSnapshot) {
+        interruptFling++
+        pendingScroll = null
+        currentPage = v.page.coerceIn(0, max(0, pageCount - 1))
+        zoom = v.zoom
+        scale = v.scale
+        scrollX = v.scrollX
+        scrollY = v.scrollY
+        clampScroll()
+        syncCurrentPageToScroll()
+    }
+
+    private fun showSpot(s: PeekSpot) {
+        if (pageCount == 0) return
+        interruptFling++
+        pendingScroll = null
+        val page = s.page.coerceIn(0, pageCount - 1)
+        currentPage = page
+        zoom = Zoom.from(s.zoom)
+        recomputeScale()
+        val l = layout
+        scrollY = l.pageTopPx(page) + s.yFrac * l.pageHeightPx(page)
+        scrollX = s.xFrac * l.contentWidthPx
+        clampScroll()
+        syncCurrentPageToScroll()
+    }
+
+    /** Counts tips shown, so the "hold to peek" hint stops after a few. */
+    suspend fun takePeekTip(limit: Int): Boolean {
+        val shown = prefs.peekTips.first()
+        if (shown >= limit) return false
+        prefs.setPeekTips(shown + 1)
+        return true
+    }
 
     fun prevPage() = goToPage(currentPage - 1)
 

@@ -13,8 +13,8 @@ android {
         applicationId = "com.paperview.mobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "1.4.1"
+        versionCode = 9
+        versionName = "1.6.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         testProguardFiles("test-proguard-rules.pro")
 
