@@ -46,7 +46,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import com.paperview.mobile.assoc.DefaultApp
-import com.paperview.mobile.cloud.B2Client
 import com.paperview.mobile.cloud.CloudViewModel
 import com.paperview.mobile.files.BrowserScreen
 import com.paperview.mobile.files.FileAccess
@@ -192,6 +191,38 @@ class MainActivity : ComponentActivity() {
                 if (result.resultCode == RESULT_OK && uri != null) openIncoming(uri)
             }
 
+            // Cloud: documents or a whole folder to upload into the folder
+            // shown, and the folder a Folder account stands for.
+            val cloudFilesPicker = rememberLauncherForActivityResult(
+                ActivityResultContracts.StartActivityForResult(),
+            ) { result ->
+                if (result.resultCode == RESULT_OK) {
+                    val uris = result.data.collectUris()
+                    if (uris.isNotEmpty()) cloud.uploadUris(uris)
+                }
+            }
+            val cloudFolderPicker = rememberLauncherForActivityResult(
+                ActivityResultContracts.StartActivityForResult(),
+            ) { result ->
+                val tree = result.data?.data
+                if (result.resultCode == RESULT_OK && tree != null) cloud.uploadTree(tree)
+            }
+            val accountFolderPicker = rememberLauncherForActivityResult(
+                ActivityResultContracts.StartActivityForResult(),
+            ) { result ->
+                val tree = result.data?.data
+                if (result.resultCode == RESULT_OK && tree != null) {
+                    // Keep access across restarts: the account reads it for good.
+                    runCatching {
+                        contentResolver.takePersistableUriPermission(
+                            tree,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                        )
+                    }
+                    cloud.editor?.let { it.draft = it.draft.copy(address = tree.toString()) }
+                }
+            }
+
             val toolPicker = rememberLauncherForActivityResult(
                 ActivityResultContracts.StartActivityForResult(),
             ) { result ->
@@ -288,9 +319,16 @@ class MainActivity : ComponentActivity() {
             }
 
             LaunchedEffect(cloud.openRequest) {
-                cloud.openRequest?.let { file ->
-                    openDoc(DocSource.Local(file), file.name)
+                cloud.openRequest?.let { req ->
+                    openDoc(req.source, req.name)
                     cloud.openRequest = null
+                }
+            }
+
+            LaunchedEffect(cloud.message) {
+                cloud.message?.let {
+                    toast(it)
+                    cloud.message = null
                 }
             }
 
@@ -393,14 +431,19 @@ class MainActivity : ComponentActivity() {
                                         onOpenLocalFile = { file ->
                                             openDoc(DocSource.Local(file), file.name)
                                         },
-                                        onOpenCloudFile = { name, size ->
-                                            val cached = B2Client.localPathFor(context, name)
-                                            if (cached.exists() && cached.length() > 0) {
-                                                openDoc(DocSource.Local(cached), name)
-                                            } else {
-                                                cloud.download(name, size, openAfter = true)
-                                            }
+                                        onUploadFiles = {
+                                            cloudFilesPicker.launch(
+                                                Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                                                    addCategory(Intent.CATEGORY_OPENABLE)
+                                                    type = "application/pdf"
+                                                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                                                },
+                                            )
                                         },
+                                        onUploadFolder = {
+                                            cloudFolderPicker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE))
+                                        },
+                                        onOpenSettings = { tab = Tab.Settings },
                                         onBrowseFiles =
                                             if (allFilesPref && FileAccess.hasAllFilesAccess()) {
                                                 { route = Route.Browser }
@@ -447,6 +490,15 @@ class MainActivity : ComponentActivity() {
                                         shelfCount = shelfStats.first,
                                         shelfBytes = shelfStats.second,
                                         cloud = cloud,
+                                        onPickAccountFolder = {
+                                            accountFolderPicker.launch(
+                                                Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(
+                                                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
+                                                        Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                                                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                                                ),
+                                            )
+                                        },
                                         allFilesEnabled = allFilesPref,
                                         allFilesGranted = FileAccess.hasAllFilesAccess(),
                                         onAllFilesToggle = { want ->
@@ -624,12 +676,12 @@ class MainActivity : ComponentActivity() {
 
     private fun uploadCurrent() {
         val file = currentFile() ?: run { toast("Nothing to upload"); return }
-        if (!cloud.config.ready) {
-            toast("Add your Backblaze details in Settings first")
+        if (!cloud.active) {
+            toast("Add a cloud account in Settings first")
             return
         }
-        cloud.upload(file)
-        toast("Uploading to ${cloud.config.bucket}")
+        // Into the folder the Cloud tab is showing.
+        cloud.uploadLocal(file)
     }
 
     private fun toast(message: String) =

@@ -13,8 +13,8 @@ android {
         applicationId = "com.paperview.mobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "1.6.0"
+        versionCode = 10
+        versionName = "1.7.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         testProguardFiles("test-proguard-rules.pro")
 
@@ -92,6 +92,7 @@ dependencies {
     implementation(libs.pdfiumandroid)
     implementation(libs.pdfbox.android)
     implementation(libs.mlkit.document.scanner)
+    implementation(libs.jsch)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.junit)

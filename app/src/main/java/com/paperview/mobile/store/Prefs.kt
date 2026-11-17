@@ -29,6 +29,9 @@ class Prefs(private val context: Context) {
         val B2_APP_KEY = stringPreferencesKey("b2_app_key")
         val B2_BUCKET = stringPreferencesKey("b2_bucket")
         val B2_ENABLED = booleanPreferencesKey("b2_enabled")
+        val CLOUD_ACCOUNTS = stringPreferencesKey("cloud_accounts")
+        val CLOUD_CURRENT = stringPreferencesKey("cloud_current")
+        val CLOUD_DIR = stringPreferencesKey("cloud_dir")
         val ALL_FILES = booleanPreferencesKey("all_files_browser")
         val KEEP_AWAKE = booleanPreferencesKey("keep_awake")
         val PAGE_FIT = intPreferencesKey("page_fit")
@@ -52,6 +55,11 @@ class Prefs(private val context: Context) {
     val b2KeyId: Flow<String> = flowOf(Keys.B2_KEY_ID, "")
     val b2AppKey: Flow<String> = flowOf(Keys.B2_APP_KEY, "")
     val b2Bucket: Flow<String> = flowOf(Keys.B2_BUCKET, "")
+
+    /** Cloud accounts as JSON (the desktop's `cloud_accounts` format). */
+    val cloudAccountsRaw: Flow<String> = flowOf(Keys.CLOUD_ACCOUNTS, "")
+    val cloudCurrent: Flow<String> = flowOf(Keys.CLOUD_CURRENT, "")
+    val cloudDir: Flow<String> = flowOf(Keys.CLOUD_DIR, "")
 
     /**
      * Whether the Library shows its Cloud tab. On by default so a bucket that
@@ -88,6 +96,9 @@ class Prefs(private val context: Context) {
     suspend fun setShelfConsolidated(value: Boolean) = put(Keys.SHELF_CONSOLIDATED, value)
     suspend fun setScanFilter(value: String) = put(Keys.SCAN_FILTER, value)
     suspend fun setB2Enabled(value: Boolean) = put(Keys.B2_ENABLED, value)
+    suspend fun setCloudAccountsRaw(value: String) = put(Keys.CLOUD_ACCOUNTS, value)
+    suspend fun setCloudCurrent(value: String) = put(Keys.CLOUD_CURRENT, value)
+    suspend fun setCloudDir(value: String) = put(Keys.CLOUD_DIR, value)
     suspend fun setPeekSpotsRaw(value: String) = put(Keys.PEEK_SPOTS, value)
     suspend fun setPeekTips(value: Int) = put(Keys.PEEK_TIPS, value)
 

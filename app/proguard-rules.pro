@@ -34,3 +34,8 @@
 -dontwarn org.conscrypt.**
 -dontwarn org.bouncycastle.**
 -dontwarn org.openjsse.**
+
+# JSch (SSH cloud accounts) loads its ciphers, key exchanges and signatures by
+# class name from its config, so R8 can't see they're used.
+-keep class com.jcraft.jsch.** { *; }
+-dontwarn com.jcraft.jsch.**

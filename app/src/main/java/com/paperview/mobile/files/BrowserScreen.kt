@@ -32,7 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.paperview.mobile.cloud.B2Client
+import com.paperview.mobile.cloud.formatSize
 import java.io.File
 
 /**
@@ -116,7 +116,7 @@ private fun Entry(file: File, isDir: Boolean, onClick: () -> Unit) {
             Text(file.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (!isDir) {
                 Text(
-                    B2Client.formatSize(file.length()),
+                    formatSize(file.length()),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

@@ -38,7 +38,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.KeyboardOptions
-import com.paperview.mobile.cloud.B2Client
+import com.paperview.mobile.cloud.formatSize
 import com.paperview.mobile.ui.components.Hairline
 import com.paperview.mobile.ui.components.InlineTextButton
 import com.paperview.mobile.ui.components.PaperButton
@@ -135,7 +135,7 @@ private fun InputSummary(vm: ToolViewModel, onAddMore: () -> Unit) {
             if (vm.pageCount > 0) {
                 Text(
                     "${vm.pageCount} pages · " +
-                        B2Client.formatSize(vm.inputs.sumOf { it.file.length() }),
+                        formatSize(vm.inputs.sumOf { it.file.length() }),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -265,7 +265,7 @@ private fun ResultView(
                 Column(Modifier.fillMaxWidth().padding(vertical = 14.dp)) {
                     Text(file.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
                     Text(
-                        B2Client.formatSize(file.length()),
+                        formatSize(file.length()),
                         style = MaterialTheme.typography.bodySmall,
                         color = PaperTheme.colors.muted,
                     )
@@ -325,8 +325,8 @@ private fun CompressOptions(vm: ToolViewModel) {
                 )
                 ToolResult(
                     listOf(r.out),
-                    "${B2Client.formatSize(r.beforeBytes)} → " +
-                        "${B2Client.formatSize(r.afterBytes)} (${r.savedPercent}% smaller)",
+                    "${formatSize(r.beforeBytes)} → " +
+                        "${formatSize(r.afterBytes)} (${r.savedPercent}% smaller)",
                 )
             }
         },

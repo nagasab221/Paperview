@@ -62,7 +62,6 @@ import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
-import com.paperview.mobile.cloud.B2Client
 import com.paperview.mobile.cloud.CloudViewModel
 import com.paperview.mobile.store.RecentEntry
 import com.paperview.mobile.ui.components.Hairline
@@ -77,7 +76,7 @@ import java.util.Date
 
 /**
  * The Library: Recents (your documents as a shelf of first-page covers) and,
- * once a Backblaze bucket is set up and switched on, a Cloud page beside it.
+ * once a cloud account is set up and switched on, a Cloud page beside it.
  * The title and tab bar stay put; the pages swipe underneath.
  */
 @OptIn(ExperimentalFoundationApi::class)
@@ -90,8 +89,10 @@ fun LandingScreen(
     onOpenPicker: () -> Unit,
     onOpenRecent: (RecentEntry) -> Unit,
     onForgetRecent: (RecentEntry) -> Unit,
-    onOpenCloudFile: (String, Long) -> Unit,
     onOpenLocalFile: (java.io.File) -> Unit,
+    onUploadFiles: () -> Unit,
+    onUploadFolder: () -> Unit,
+    onOpenSettings: () -> Unit,
     onBrowseFiles: (() -> Unit)?,
     contentPadding: PaddingValues = PaddingValues(0.dp),
 ) {
@@ -103,11 +104,13 @@ fun LandingScreen(
         pageCount = { if (showCloud) 2 else 1 },
     )
 
-    LaunchedEffect(cloud.config, showCloud) {
+    LaunchedEffect(cloud.currentId, showCloud) {
         // Re-read the disk every time the Library appears: a download from
         // another screen, or a file removed, should show without a network call.
-        cloud.refreshCached()
-        if (showCloud) cloud.listIfReady() else if (pager.currentPage != 0) pager.scrollToPage(0)
+        cloud.refreshLocal()
+        if (showCloud) {
+            if (!cloud.listed && !cloud.busy && cloud.error == null) cloud.list()
+        } else if (pager.currentPage != 0) pager.scrollToPage(0)
     }
     LaunchedEffect(pager.currentPage) { onPageChange(pager.currentPage) }
 
@@ -117,7 +120,7 @@ fun LandingScreen(
         PaperMasthead(
             title = "Library",
             subtitle = when {
-                onCloudPage -> cloud.config.bucket
+                onCloudPage -> cloud.current?.summary
                 recents.isEmpty() -> null
                 else -> "${recents.size} document${if (recents.size == 1) "" else "s"}"
             },
@@ -160,8 +163,10 @@ fun LandingScreen(
             } else {
                 CloudPage(
                     cloud = cloud,
-                    onOpenFile = onOpenCloudFile,
                     onOpenLocal = onOpenLocalFile,
+                    onUploadFiles = onUploadFiles,
+                    onUploadFolder = onUploadFolder,
+                    onOpenSettings = onOpenSettings,
                     contentPadding = contentPadding,
                 )
             }
@@ -243,200 +248,6 @@ private fun RecentsPage(
     }
 }
 
-/** The Backblaze bucket and whatever of it is already downloaded. */
-@Composable
-private fun CloudPage(
-    cloud: CloudViewModel,
-    onOpenFile: (String, Long) -> Unit,
-    onOpenLocal: (java.io.File) -> Unit,
-    contentPadding: PaddingValues,
-) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(
-            start = 20.dp,
-            end = 20.dp,
-            bottom = contentPadding.calculateBottomPadding() + 32.dp,
-        ),
-    ) {
-        item {
-            SectionHeading(
-                "Saved to cloud",
-                trailing = {
-                    InlineTextButton("Refresh", enabled = !cloud.busy) { cloud.refresh() }
-                },
-            )
-        }
-        item { CloudSection(cloud = cloud, onOpenFile = onOpenFile, onOpenLocal = onOpenLocal) }
-    }
-}
-
-/** Small caption dividing the cloud list into on-device and bucket-only. */
-@Composable
-private fun CloudGroupLabel(text: String, count: Int) {
-    Row(
-        Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text.uppercase(),
-            style = MaterialTheme.typography.labelMedium,
-            color = PaperTheme.colors.muted,
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            count.toString(),
-            style = MaterialTheme.typography.labelMedium,
-            color = PaperTheme.colors.muted,
-        )
-    }
-    Hairline()
-}
-
-/**
- * A document already on the device. Backed by the file itself, so it renders
- * and opens with no network whatsoever.
- */
-@Composable
-private fun LocalFileRow(
-    cloud: CloudViewModel,
-    doc: com.paperview.mobile.cloud.LocalDoc,
-    onOpen: (java.io.File) -> Unit,
-) {
-    val colors = PaperTheme.colors
-    var menuOpen by remember { mutableStateOf(false) }
-    PaperRow(
-        title = doc.name,
-        subtitle = "On this device · ${B2Client.formatSize(doc.size)}",
-        icon = Icons.Outlined.OfflinePin,
-        showChevron = false,
-        onClick = { onOpen(doc.file) },
-        trailing = {
-            Box {
-                IconButton(onClick = { menuOpen = true }) {
-                    Icon(
-                        Icons.Outlined.MoreVert,
-                        contentDescription = "More",
-                        tint = colors.muted,
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
-                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                    DropdownMenuItem(
-                        text = {
-                            Text("Remove download", style = MaterialTheme.typography.bodyMedium)
-                        },
-                        onClick = { menuOpen = false; cloud.removeLocal(doc.file) },
-                    )
-                }
-            }
-        },
-    )
-    Hairline()
-}
-
-/**
- * One bucket file, showing which of four states it is in: on the device,
- * waiting, downloading (with its own progress), or cloud-only.
- */
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun CloudFileRow(
-    cloud: CloudViewModel,
-    file: com.paperview.mobile.cloud.CloudFile,
-    onOpenFile: (String, Long) -> Unit,
-) {
-    val colors = PaperTheme.colors
-    val downloaded = cloud.isDownloaded(file.name)
-    val transfer = cloud.transfer?.takeIf { it.name == file.name }
-    val queued = cloud.isQueued(file.name)
-    val picked = cloud.selected.contains(file.name)
-    var menuOpen by remember { mutableStateOf(false) }
-
-    val size = B2Client.formatSize(file.size)
-    val date = if (file.uploadedMs > 0) {
-        DateFormat.getDateInstance(DateFormat.SHORT).format(Date(file.uploadedMs))
-    } else null
-
-    val subtitle = when {
-        transfer != null -> buildString {
-            append("Downloading ${(transfer.fraction * 100).toInt()}%")
-            if (transfer.bytesPerSecond > 0) {
-                append(" · ${B2Client.formatSize(transfer.bytesPerSecond.toLong())}/s")
-            }
-        }
-        queued -> "Waiting to download…"
-        downloaded -> "On this device · $size"
-        else -> "Tap to download · $size" + (date?.let { " · $it" } ?: "")
-    }
-
-    PaperRow(
-        title = file.name,
-        subtitle = subtitle,
-        icon = when {
-            transfer != null || queued -> Icons.Outlined.Downloading
-            downloaded -> Icons.Outlined.OfflinePin
-            else -> Icons.Outlined.CloudDownload
-        },
-        showChevron = false,
-        onClick = { if (transfer == null && !queued) onOpenFile(file.name, file.size) },
-        trailing = {
-            Box {
-                IconButton(onClick = { menuOpen = true }) {
-                    Icon(
-                        Icons.Outlined.MoreVert,
-                        contentDescription = "More",
-                        tint = if (picked) colors.accent else colors.muted,
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
-                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                    if (downloaded) {
-                        DropdownMenuItem(
-                            text = { Text("Remove download", style = MaterialTheme.typography.bodyMedium) },
-                            onClick = { menuOpen = false; cloud.removeDownload(file.name) },
-                        )
-                    } else {
-                        DropdownMenuItem(
-                            text = { Text("Download", style = MaterialTheme.typography.bodyMedium) },
-                            onClick = {
-                                menuOpen = false
-                                cloud.download(file.name, file.size, openAfter = false)
-                            },
-                        )
-                    }
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                if (picked) "Deselect" else "Select",
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                        },
-                        onClick = { menuOpen = false; cloud.toggleSelected(file.name) },
-                    )
-                }
-            }
-        },
-    )
-    // A hairline-thin bar directly under the row it belongs to.
-    if (transfer != null) {
-        LinearProgressIndicator(
-            progress = { transfer.fraction },
-            modifier = Modifier.fillMaxWidth().height(2.dp),
-            color = colors.accent,
-            trackColor = colors.hairline,
-        )
-    } else if (queued) {
-        LinearProgressIndicator(
-            modifier = Modifier.fillMaxWidth().height(2.dp),
-            color = colors.accent,
-            trackColor = colors.hairline,
-        )
-    } else {
-        Hairline()
-    }
-}
-
 /** One document on the shelf: cover, title, and where you were. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -504,131 +315,5 @@ private fun CoverTile(entry: RecentEntry, onOpen: () -> Unit, onForget: () -> Un
             color = colors.muted,
             maxLines = 1,
         )
-    }
-}
-
-/** The Backblaze bucket, as a list beneath the shelf. */
-@Composable
-private fun CloudSection(
-    cloud: CloudViewModel,
-    onOpenFile: (String, Long) -> Unit,
-    onOpenLocal: (java.io.File) -> Unit,
-) {
-    val colors = PaperTheme.colors
-    var confirmDelete by remember { mutableStateOf(false) }
-
-    Column(Modifier.fillMaxWidth()) {
-        val hasLocal = cloud.localFiles.isNotEmpty()
-        when {
-            // Anything already downloaded is shown even with no credentials or
-            // no signal; only the bucket half needs the network.
-            hasLocal && (!cloud.config.ready || (cloud.busy && cloud.files.isEmpty())) -> {
-                CloudGroupLabel("On this device", cloud.localFiles.size)
-                cloud.localFiles.forEach { doc -> LocalFileRow(cloud, doc, onOpenLocal) }
-                if (cloud.busy) {
-                    Text(
-                        "Checking your bucket…",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.muted,
-                        modifier = Modifier.padding(vertical = 12.dp),
-                    )
-                }
-            }
-            !cloud.config.ready -> Text(
-                "Add your Backblaze key in Settings to keep documents in your own bucket.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = colors.muted,
-                modifier = Modifier.padding(vertical = 16.dp),
-            )
-
-            cloud.busy && cloud.files.isEmpty() -> Row(
-                Modifier.fillMaxWidth().padding(vertical = 20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                Spacer(Modifier.width(12.dp))
-                Text(
-                    cloud.status.ifBlank { "Connecting…" },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.muted,
-                )
-            }
-
-            cloud.files.isEmpty() && cloud.loadedOnce -> Text(
-                "Bucket is empty. Use \"Save to cloud\" while reading to upload a document.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = colors.muted,
-                modifier = Modifier.padding(vertical = 16.dp),
-            )
-
-            else -> Column {
-                if (cloud.selected.isNotEmpty()) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            "${cloud.selected.size} selected",
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.weight(1f),
-                        )
-                        InlineTextButton("Download") { cloud.downloadSelected() }
-                        InlineTextButton(
-                            if (confirmDelete) "Confirm delete" else "Delete",
-                        ) {
-                            // Two taps: these files are the only copy in the bucket.
-                            if (confirmDelete) {
-                                cloud.deleteSelected(); confirmDelete = false
-                            } else confirmDelete = true
-                        }
-                    }
-                    Hairline()
-                }
-
-                // Split by where the file actually is. The on-device group is
-                // read from disk rather than filtered out of the bucket
-                // listing, so downloaded documents stay visible with no
-                // network at all.
-                val inCloud = cloud.files.filterNot { cloud.isDownloaded(it.name) }
-
-                if (cloud.localFiles.isNotEmpty()) {
-                    CloudGroupLabel("On this device", cloud.localFiles.size)
-                    cloud.localFiles.forEach { doc -> LocalFileRow(cloud, doc, onOpenLocal) }
-                }
-                if (inCloud.isNotEmpty()) {
-                    CloudGroupLabel("In your bucket", inCloud.size)
-                    inCloud.forEach { file -> CloudFileRow(cloud, file, onOpenFile) }
-                }
-            }
-        }
-
-        cloud.error?.let { message ->
-            Spacer(Modifier.height(12.dp))
-            Text(
-                message,
-                style = MaterialTheme.typography.bodySmall,
-                // With local copies present a failed listing is an
-                // inconvenience, not a failure — don't shout about it.
-                color = if (hasLocal) colors.muted else MaterialTheme.colorScheme.error,
-            )
-            if (hasLocal) {
-                Text(
-                    "The documents above are on this device and open normally.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.muted,
-                )
-            }
-            InlineTextButton("Dismiss") { cloud.clearError() }
-        }
-
-        if (cloud.config.ready && cloud.files.isNotEmpty()) {
-            Spacer(Modifier.height(14.dp))
-            val used = cloud.files.sumOf { it.size }
-            Text(
-                "${cloud.files.size} files · ${B2Client.formatSize(used)} of 10 GB free tier",
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.muted,
-            )
-        }
     }
 }

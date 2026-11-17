@@ -38,7 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import com.paperview.mobile.cloud.B2Client
+import com.paperview.mobile.cloud.formatSize
 import com.paperview.mobile.cloud.CloudViewModel
 import com.paperview.mobile.ui.components.Hairline
 import com.paperview.mobile.ui.components.InlineTextButton
@@ -64,6 +64,7 @@ fun SettingsScreen(
     shelfCount: Int,
     shelfBytes: Long,
     cloud: CloudViewModel,
+    onPickAccountFolder: () -> Unit,
     allFilesEnabled: Boolean,
     allFilesGranted: Boolean,
     onAllFilesToggle: (Boolean) -> Unit,
@@ -172,15 +173,14 @@ fun SettingsScreen(
         }
 
         // ── Cloud ────────────────────────────────────────────────────────────
-        item { SectionHeading("Backblaze B2") }
-        item { CloudSettings(cloud) }
+        item { CloudAccountsSection(cloud, onPickAccountFolder) }
 
         // ── Storage ──────────────────────────────────────────────────────────
         item { SectionHeading("Storage") }
         item {
             PaperRow(
                 title = "Downloaded documents",
-                subtitle = "${cloud.cacheCount} files · ${B2Client.formatSize(cloud.cacheBytes)}",
+                subtitle = "${cloud.cacheCount} files · ${formatSize(cloud.cacheBytes)}",
                 icon = Icons.Outlined.CloudQueue,
                 showChevron = false,
                 trailing = { InlineTextButton("Clear") { cloud.clearCache() } },
@@ -191,7 +191,7 @@ fun SettingsScreen(
                 subtitle = if (shelfCount == 0) {
                     "Copies of documents other apps open"
                 } else {
-                    "$shelfCount files · ${B2Client.formatSize(shelfBytes)}"
+                    "$shelfCount files · ${formatSize(shelfBytes)}"
                 },
                 icon = Icons.Outlined.Inventory2,
                 showChevron = false,
@@ -225,7 +225,7 @@ fun SettingsScreen(
             Text(
                 "The same viewer as the desktop build, rendering with PDFium. " +
                     "Editing runs on PDFBox. Nothing you open is uploaded anywhere " +
-                    "except the bucket you configure yourself.",
+                    "except the cloud accounts you add yourself.",
                 style = MaterialTheme.typography.bodySmall,
                 color = colors.muted,
             )
@@ -281,93 +281,4 @@ private fun skinPreviewAccent(skin: Skin) = when (skin) {
     Skin.Paper -> androidx.compose.ui.graphics.Color(0xFF8A5A2B)
     Skin.Slate -> androidx.compose.ui.graphics.Color(0xFF35678F)
     Skin.Ink -> androidx.compose.ui.graphics.Color(0xFF0B0B0A)
-}
-
-@Composable
-private fun CloudSettings(cloud: CloudViewModel) {
-    val colors = PaperTheme.colors
-    var keyId by remember(cloud.config) { mutableStateOf(cloud.config.keyId) }
-    var appKey by remember(cloud.config) { mutableStateOf(cloud.config.appKey) }
-    var bucket by remember(cloud.config) { mutableStateOf(cloud.config.bucket) }
-    var showKey by remember { mutableStateOf(false) }
-    var saved by remember { mutableStateOf(false) }
-
-    Column(Modifier.fillMaxWidth().padding(top = 14.dp)) {
-        Text(
-            "Used by the Cloud tab of your Library. Uploads only happen when " +
-                "you tap “Save to cloud” while reading.",
-            style = MaterialTheme.typography.bodySmall,
-            color = colors.muted,
-        )
-        Spacer(Modifier.height(6.dp))
-        PaperRow(
-            title = "Cloud tab",
-            subtitle = when {
-                !cloud.config.ready -> "Save your bucket details below to turn this on"
-                cloud.enabled -> "On — Library shows Recents and Cloud"
-                else -> "Off — Library shows Recents only"
-            },
-            icon = Icons.Outlined.CloudQueue,
-            showChevron = false,
-            trailing = {
-                Switch(
-                    checked = cloud.active,
-                    enabled = cloud.config.ready,
-                    onCheckedChange = { cloud.setCloudEnabled(it) },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = colors.onAccent,
-                        checkedTrackColor = colors.accent,
-                        uncheckedThumbColor = colors.muted,
-                        uncheckedTrackColor = colors.background,
-                        uncheckedBorderColor = colors.hairline,
-                    ),
-                )
-            },
-        )
-        Hairline(inset = 37)
-        Spacer(Modifier.height(14.dp))
-        PaperField(
-            value = keyId,
-            onValueChange = { keyId = it; saved = false },
-            label = "Key ID",
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(10.dp))
-        PaperField(
-            value = appKey,
-            onValueChange = { appKey = it; saved = false },
-            label = "Application key",
-            modifier = Modifier.fillMaxWidth(),
-            visualTransformation = if (showKey) VisualTransformation.None
-            else PasswordVisualTransformation(),
-            trailing = {
-                InlineTextButton(if (showKey) "Hide" else "Show") { showKey = !showKey }
-            },
-        )
-        // The two B2 credentials look alike and get pasted into the wrong boxes.
-        if (appKey.isNotBlank() && !appKey.startsWith("K")) {
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "Application keys start with “K” — this looks like the Key ID.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
-        }
-        Spacer(Modifier.height(10.dp))
-        PaperField(
-            value = bucket,
-            onValueChange = { bucket = it; saved = false },
-            label = "Bucket name",
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(16.dp))
-        PaperButton(
-            text = if (saved) "Saved" else "Save and connect",
-            onClick = { cloud.setCredentials(keyId, appKey, bucket); saved = true },
-        )
-        cloud.error?.let {
-            Spacer(Modifier.height(10.dp))
-            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-        }
-    }
 }

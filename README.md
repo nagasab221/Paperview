@@ -71,14 +71,21 @@ Nothing is locked behind a paywall, and nothing is uploaded anywhere to do the w
 
 ## Optional: keep your PDFs in your own cloud
 
-PaperView can back up documents to **Backblaze B2**, which gives you 10 GB free. It's your own storage, not ours, and nothing is uploaded unless you ask.
+Add one or more cloud accounts and switch between them on the Library's **Cloud** tab. It shows the account's folders, so you can browse, make new folders, and upload PDFs or a whole folder with its subfolders. Nothing is uploaded unless you ask. These are the same account types as the [desktop app](https://github.com/nagasab221/PaperView-Desktop), and both apps see the same files:
 
-1. Create a free account at [backblaze.com](https://www.backblaze.com/cloud-storage) and make a **private bucket**.
-2. Under **Application Keys**, create a key that can access that bucket.
-3. In PaperView, go to **Settings → Backblaze B2**, enter the **Key ID**, **Application key** and **bucket name**, then tap **Save and connect**.
-4. A **Cloud** tab now appears in your Library. To upload a document, open it and choose **⋮ → Save to cloud**.
+| Account type | Works with |
+|---|---|
+| **SSH** | A computer or NAS you can `ssh` into. PaperView makes its own key for this phone; add it to the server's `~/.ssh/authorized_keys` (or enter the password). |
+| **WebDAV** | Nextcloud, ownCloud, Synology, QNAP, TrueNAS… |
+| **S3** | Cloudflare R2, Wasabi, AWS S3, MinIO… |
+| **Backblaze B2** | A private B2 bucket (10 GB free) |
+| **Folder** | Any folder the system folder picker offers, including ones a NAS or Nextcloud app shares. Documents open straight from it. |
 
-Don't want the Cloud tab? Switch it off in Settings at any time.
+1. Go to **Settings → Cloud → Add account**, pick the type and fill in the details.
+2. Tap **Connect and save**. PaperView connects first and shows what it's doing. The account is saved only once it answers, and if it can't connect, it tells you why (wrong password, unknown host, nothing answering…). **Test connection** in each account's menu checks it again later.
+3. To upload, use **Add…** on the Cloud tab, or open a document and choose **⋮ → Save to cloud**. It goes into the folder the Cloud tab is showing.
+
+Passwords and keys are encrypted with a key kept in the phone's Keystore. Don't want the Cloud tab? Switch it off in Settings at any time.
 
 ---
 
@@ -99,7 +106,7 @@ Don't want the Cloud tab? Switch it off in Settings at any time.
 - No ads, no analytics, no accounts.
 - Reading and all 14 tools work offline, on your phone.
 - The scanner uses the document scanner built into Google Play services, so it needs a phone with Google Play. The very first scan may download it. Your scans are processed on the phone.
-- Otherwise the internet is only used if you set up the optional cloud backup, and then only to talk to your own bucket.
+- Otherwise the internet is only used if you set up the optional cloud backup, and then only to talk to the accounts you added.
 
 ---
 
