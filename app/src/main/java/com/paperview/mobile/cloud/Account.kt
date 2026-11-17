@@ -160,11 +160,9 @@ fun parentPath(path: String): String = path.trimEnd('/').substringBeforeLast('/'
 
 fun lastPart(path: String): String = path.trimEnd('/').substringAfterLast('/')
 
-/**
- * Documents the phone app shows and uploads. The desktop also lists ebooks;
- * PaperView on Android reads PDFs, so only those appear here.
- */
-fun isDocument(name: String): Boolean = name.lowercase().endsWith(".pdf")
+/** Documents PaperView shows and uploads: PDFs and books (as on the desktop). */
+fun isDocument(name: String): Boolean =
+    name.lowercase().endsWith(".pdf") || com.paperview.mobile.book.Ebooks.isEbook(name)
 
 /** What a listing shows: folders and documents, no hidden files. */
 internal fun keep(f: CloudFile): Boolean =

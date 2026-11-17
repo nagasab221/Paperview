@@ -80,7 +80,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /** Full-screen destinations that sit outside the tabbed shell. */
-private enum class Route { Shell, Viewer, Browser, ToolFlow, ScanReview }
+private enum class Route { Shell, Viewer, Book, Browser, ToolFlow, ScanReview }
 
 private enum class Tab(val label: String, val icon: ImageVector) {
     Library("Library", Icons.Outlined.LibraryBooks),
@@ -94,6 +94,7 @@ class MainActivity : ComponentActivity() {
     private val viewer: ViewerViewModel by viewModels()
     private val cloud: CloudViewModel by viewModels()
     private val toolVm: ToolViewModel by viewModels()
+    private val bookVm: com.paperview.mobile.book.BookViewModel by viewModels()
 
     /** A document handed to us by another app, waiting for Compose to start. */
     private var pendingIntentUri by mutableStateOf<Uri?>(null)
@@ -117,6 +118,7 @@ class MainActivity : ComponentActivity() {
             // opened off the Cloud page lands back on Cloud.
             var libraryPage by remember { mutableStateOf(0) }
             var recents by remember { mutableStateOf<List<RecentEntry>>(emptyList()) }
+            var books by remember { mutableStateOf<List<com.paperview.mobile.book.BookEntry>>(emptyList()) }
             var toolHistory by remember { mutableStateOf<List<ToolId>>(emptyList()) }
             var isDefaultApp by remember { mutableStateOf(false) }
             var pendingTool by remember { mutableStateOf<Tool?>(null) }
@@ -130,9 +132,38 @@ class MainActivity : ComponentActivity() {
                 recents = Recents.list(prefs).filter { FileAccess.exists(context, it.uri) }
             }
             suspend fun reloadHistory() { toolHistory = ToolHistory.list(prefs) }
+            suspend fun reloadBooks() {
+                books = com.paperview.mobile.book.BookStore.list(prefs).filter { java.io.File(it.path).exists() }
+            }
             fun reloadShelfStats() { shelfStats = Shelf.stats(context) }
 
+            /** Opens a book in the reader (it joins the Books shelf). */
+            fun openBook(file: java.io.File, name: String) {
+                bookVm.open(file, name)
+                route = Route.Book
+            }
+
+            /**
+             * A book from anywhere: local files are read in place, anything
+             * else is copied once (parsers need random access).
+             */
+            fun openBookSource(source: DocSource, name: String) {
+                when (source) {
+                    is DocSource.Local -> openBook(source.file, name)
+                    is DocSource.Content -> lifecycleScope.launch {
+                        val f = withContext(Dispatchers.IO) {
+                            com.paperview.mobile.book.BookStore.localCopy(context, source.uri, name)
+                        }
+                        if (f != null) openBook(f, name) else toast("Couldn't read $name")
+                    }
+                }
+            }
+
             fun openDoc(source: DocSource, name: String, restore: RecentEntry? = null) {
+                if (com.paperview.mobile.book.Ebooks.isEbook(name)) {
+                    openBookSource(source, name)
+                    return
+                }
                 lifecycleScope.launch {
                     // Reading a copy counts as using it, so eviction drops the
                     // documents you've stopped coming back to.
@@ -167,6 +198,9 @@ class MainActivity : ComponentActivity() {
                     // thread.
                     val opened = withContext(Dispatchers.IO) {
                         val name = FileAccess.displayName(context, uri)
+                        if (com.paperview.mobile.book.Ebooks.isEbook(name)) {
+                            return@withContext DocSource.Content(uri) to name
+                        }
                         val source = if (FileAccess.persist(context, uri)) {
                             DocSource.Content(uri)
                         } else {
@@ -306,6 +340,7 @@ class MainActivity : ComponentActivity() {
                 // holding the page last read. Runs once, then never again.
                 Shelf.consolidate(context, prefs)
                 reloadRecents()
+                reloadBooks()
                 reloadHistory()
                 reloadShelfStats()
                 isDefaultApp = DefaultApp.isDefault(context)
@@ -335,6 +370,7 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(route, tab) {
                 if (route == Route.Shell) {
                     reloadRecents()
+                    reloadBooks()
                     reloadHistory()
                     reloadShelfStats()
                 }
@@ -345,6 +381,7 @@ class MainActivity : ComponentActivity() {
                     Route.ScanReview -> if (!scanSaving) { scanPages = emptyList(); route = Route.Shell }
                     Route.ToolFlow -> { toolVm.reset(); route = Route.Shell }
                     Route.Browser -> route = Route.Shell
+                    Route.Book -> { bookVm.close(); route = Route.Shell }
                     Route.Viewer -> {
                         viewer.persistState()
                         viewer.closeDocument()
@@ -409,11 +446,28 @@ class MainActivity : ComponentActivity() {
                                 when (tab) {
                                     Tab.Library -> LandingScreen(
                                         recents = recents,
+                                        books = books,
+                                        onOpenBook = { b -> openBook(java.io.File(b.path), b.name) },
+                                        onRemoveBook = { b ->
+                                            lifecycleScope.launch {
+                                                com.paperview.mobile.book.BookStore.remove(context, prefs, b)
+                                                reloadBooks()
+                                            }
+                                        },
                                         cloud = cloud,
                                         page = libraryPage,
                                         onPageChange = { libraryPage = it },
                                         onOpenPicker = {
-                                            openPicker.launch(FileAccess.openDocumentIntent())
+                                            openPicker.launch(
+                                                FileAccess.openDocumentIntent().apply {
+                                                    type = "*/*"
+                                                    putExtra(
+                                                        Intent.EXTRA_MIME_TYPES,
+                                                        arrayOf("application/pdf", "application/octet-stream") +
+                                                            com.paperview.mobile.book.Ebooks.MIME_TYPES,
+                                                    )
+                                                },
+                                            )
                                         },
                                         onOpenRecent = { entry ->
                                             openDoc(
@@ -435,7 +489,12 @@ class MainActivity : ComponentActivity() {
                                             cloudFilesPicker.launch(
                                                 Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                                                     addCategory(Intent.CATEGORY_OPENABLE)
-                                                    type = "application/pdf"
+                                                    type = "*/*"
+                                                    putExtra(
+                                                        Intent.EXTRA_MIME_TYPES,
+                                                        arrayOf("application/pdf", "application/octet-stream") +
+                                                            com.paperview.mobile.book.Ebooks.MIME_TYPES,
+                                                    )
                                                     putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
                                                 },
                                             )
@@ -530,6 +589,19 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         }
+
+                        Route.Book -> com.paperview.mobile.book.BookReaderScreen(
+                            vm = bookVm,
+                            dark = when (theme.name) {
+                                "Dark" -> true
+                                "Light" -> false
+                                else -> androidx.compose.foundation.isSystemInDarkTheme()
+                            },
+                            onClose = {
+                                bookVm.close()
+                                route = Route.Shell
+                            },
+                        )
 
                         Route.Viewer -> ViewerScreen(
                             vm = viewer,
@@ -628,6 +700,18 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         if (viewer.state == DocState.Ready) viewer.persistState()
+        bookVm.saveNow()
+    }
+
+    /** Volume keys turn book pages when the reader asks for them. */
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        val handler = com.paperview.mobile.book.BookKeys.handler
+        val code = event.keyCode
+        if (handler != null && (code == android.view.KeyEvent.KEYCODE_VOLUME_DOWN || code == android.view.KeyEvent.KEYCODE_VOLUME_UP)) {
+            if (event.action == android.view.KeyEvent.ACTION_DOWN) handler(code == android.view.KeyEvent.KEYCODE_VOLUME_DOWN)
+            return true
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     private fun currentFile(): File? {

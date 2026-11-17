@@ -29,8 +29,21 @@ Made for working through questions while the answers are somewhere else in the d
 
 Each document remembers its own peek spot. Move or remove it from the same **⋮** menu.
 
+### 📕 Books, not just PDFs
+Open **EPUB**, Kindle (**MOBI / AZW3**, without DRM), **FB2**, comics (**CBZ**), **TXT** and **HTML** with **+** in the Library, from your cloud, or with "Open with PaperView" from any app. The same reader as the [desktop app](https://github.com/nagasab221/PaperView-Desktop):
+
+- Real pages: swipe, or tap the left or right edge, and tap the middle for the menu. Prefer scrolling? Switch to **Scroll** in the **Aa** sheet.
+- Turn the phone on its side for **two pages side by side**
+- **Aa**: nine typefaces (including Literata, EB Garamond, Atkinson Hyperlegible and OpenDyslexic), text size, line spacing, margins, indented or spaced paragraphs, justified or ragged text
+- Page colours **Paper**, **Sepia**, **Dark** and **Black**, independent of the app's theme, plus a brightness slider
+- **Contents** to jump to any chapter, and **bookmarks** you can add from the menu and jump back to
+- A footer showing the chapter, how many pages are left in it, and a progress line. **Go to page** takes a page number or a percentage.
+- **Volume keys** can turn pages, the screen can stay on, and full screen hides the system bars
+- Each book opens where you left it, even after changing the text size or turning the phone
+
 ### 📚 Your library
 - All your recent PDFs on a shelf, showing their first page and the page you're on
+- A **Books** tab with covers and how far you've read
 - A separate **Cloud** tab for documents saved to your own online storage (optional, see below)
 - Long-press a cover to remove it from the shelf
 

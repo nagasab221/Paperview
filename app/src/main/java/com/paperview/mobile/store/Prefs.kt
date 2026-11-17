@@ -32,6 +32,8 @@ class Prefs(private val context: Context) {
         val CLOUD_ACCOUNTS = stringPreferencesKey("cloud_accounts")
         val CLOUD_CURRENT = stringPreferencesKey("cloud_current")
         val CLOUD_DIR = stringPreferencesKey("cloud_dir")
+        val BOOKS = stringPreferencesKey("books")
+        val READING = stringPreferencesKey("reading")
         val ALL_FILES = booleanPreferencesKey("all_files_browser")
         val KEEP_AWAKE = booleanPreferencesKey("keep_awake")
         val PAGE_FIT = intPreferencesKey("page_fit")
@@ -60,6 +62,12 @@ class Prefs(private val context: Context) {
     val cloudAccountsRaw: Flow<String> = flowOf(Keys.CLOUD_ACCOUNTS, "")
     val cloudCurrent: Flow<String> = flowOf(Keys.CLOUD_CURRENT, "")
     val cloudDir: Flow<String> = flowOf(Keys.CLOUD_DIR, "")
+
+    /** The Books shelf as JSON; see [com.paperview.mobile.book.BookStore]. */
+    val booksRaw: Flow<String> = flowOf(Keys.BOOKS, "")
+
+    /** How books are typeset (the desktop's "reading" key format). */
+    val readingRaw: Flow<String> = flowOf(Keys.READING, "")
 
     /**
      * Whether the Library shows its Cloud tab. On by default so a bucket that
@@ -99,6 +107,8 @@ class Prefs(private val context: Context) {
     suspend fun setCloudAccountsRaw(value: String) = put(Keys.CLOUD_ACCOUNTS, value)
     suspend fun setCloudCurrent(value: String) = put(Keys.CLOUD_CURRENT, value)
     suspend fun setCloudDir(value: String) = put(Keys.CLOUD_DIR, value)
+    suspend fun setBooksRaw(value: String) = put(Keys.BOOKS, value)
+    suspend fun setReadingRaw(value: String) = put(Keys.READING, value)
     suspend fun setPeekSpotsRaw(value: String) = put(Keys.PEEK_SPOTS, value)
     suspend fun setPeekTips(value: Int) = put(Keys.PEEK_TIPS, value)
 

@@ -476,7 +476,7 @@ class CloudViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             if (items.isEmpty()) {
-                message = "Only PDFs can be uploaded"
+                message = "Only PDFs and books can be uploaded"
                 return@launch
             }
             val label = if (items.size == 1) lastPart(items[0].remote) else "${items.size} documents"
@@ -526,7 +526,7 @@ class CloudViewModel(app: Application) : AndroidViewModel(app) {
             }
             status = ""
             if (items.isEmpty()) {
-                message = "There are no PDFs in $name or its subfolders"
+                message = "There are no PDFs or books in $name or its subfolders"
                 return@launch
             }
             enqueue(CloudOp.Upload(items, folders, "the folder $name"))

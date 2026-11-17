@@ -49,7 +49,8 @@ class CloudTest {
         assertEquals("Calc", lastPart("Math/Calc/"))
         assertEquals("a%20b%C3%BC/c.pdf", percentEncode("a bü/c.pdf", keepSlash = true))
         assertTrue(isDocument("X.PDF"))
-        assertFalse(isDocument("notes.txt"))
+        assertFalse(isDocument("notes.docx"))
+        assertTrue(isDocument("novel.epub"))
     }
 
     @Test fun listingOrderAndFilter() {

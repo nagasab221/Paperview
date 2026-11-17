@@ -55,7 +55,7 @@ class FolderBackend(private val context: Context, acct: Account) : Backend {
         val name = lastPart(path)
         // Replace an existing file in place; createFile would add " (1)".
         val target = dir.findFile(name)?.takeIf { it.isFile }
-            ?: dir.createFile("application/pdf", name)
+            ?: dir.createFile(if (name.lowercase().endsWith(".pdf")) "application/pdf" else "application/octet-stream", name)
             ?: throw CloudException("Could not create $name")
         context.contentResolver.openOutputStream(target.uri, "wt")?.use { out ->
             var sent = 0

@@ -83,6 +83,9 @@ import java.util.Date
 @Composable
 fun LandingScreen(
     recents: List<RecentEntry>,
+    books: List<com.paperview.mobile.book.BookEntry>,
+    onOpenBook: (com.paperview.mobile.book.BookEntry) -> Unit,
+    onRemoveBook: (com.paperview.mobile.book.BookEntry) -> Unit,
     cloud: CloudViewModel,
     page: Int,
     onPageChange: (Int) -> Unit,
@@ -99,9 +102,15 @@ fun LandingScreen(
     val colors = PaperTheme.colors
     val showCloud = cloud.active
     val scope = rememberCoroutineScope()
+    // Recents always; Books once there's a book; Cloud once an account is on.
+    val tabs = buildList {
+        add("Recents")
+        if (books.isNotEmpty()) add("Books")
+        if (showCloud) add("Cloud")
+    }
     val pager = rememberPagerState(
-        initialPage = if (showCloud) page.coerceIn(0, 1) else 0,
-        pageCount = { if (showCloud) 2 else 1 },
+        initialPage = page.coerceIn(0, tabs.size - 1),
+        pageCount = { tabs.size },
     )
 
     LaunchedEffect(cloud.currentId, showCloud) {
@@ -110,17 +119,20 @@ fun LandingScreen(
         cloud.refreshLocal()
         if (showCloud) {
             if (!cloud.listed && !cloud.busy && cloud.error == null) cloud.list()
-        } else if (pager.currentPage != 0) pager.scrollToPage(0)
+        }
+        if (pager.currentPage >= tabs.size) pager.scrollToPage(0)
     }
     LaunchedEffect(pager.currentPage) { onPageChange(pager.currentPage) }
 
-    val onCloudPage = showCloud && pager.currentPage == 1
+    val tab = tabs.getOrElse(pager.currentPage) { "Recents" }
+    val onCloudPage = tab == "Cloud"
 
     Column(Modifier.fillMaxSize().background(colors.background)) {
         PaperMasthead(
             title = "Library",
             subtitle = when {
                 onCloudPage -> cloud.current?.summary
+                tab == "Books" -> "${books.size} book${if (books.size == 1) "" else "s"}"
                 recents.isEmpty() -> null
                 else -> "${recents.size} document${if (recents.size == 1) "" else "s"}"
             },
@@ -133,14 +145,15 @@ fun LandingScreen(
                         }
                     }
                     IconButton(onClick = onOpenPicker) {
-                        Icon(Icons.Outlined.Add, "Open a PDF", tint = colors.ink)
+                        Icon(Icons.Outlined.Add, "Open a PDF or a book", tint = colors.ink)
                     }
                 }
             },
         )
 
-        if (showCloud) {
+        if (tabs.size > 1) {
             LibraryTabs(
+                labels = tabs,
                 selected = pager.currentPage,
                 onSelect = { scope.launch { pager.animateScrollToPage(it) } },
             )
@@ -152,16 +165,16 @@ fun LandingScreen(
             verticalAlignment = Alignment.Top,
             key = { it },
         ) { index ->
-            if (index == 0) {
-                RecentsPage(
+            when (tabs.getOrElse(index) { "Recents" }) {
+                "Books" -> BooksPage(books, onOpenBook, onRemoveBook, contentPadding)
+                "Recents" -> RecentsPage(
                     recents = recents,
                     onOpenPicker = onOpenPicker,
                     onOpenRecent = onOpenRecent,
                     onForgetRecent = onForgetRecent,
                     contentPadding = contentPadding,
                 )
-            } else {
-                CloudPage(
+                else -> CloudPage(
                     cloud = cloud,
                     onOpenLocal = onOpenLocalFile,
                     onUploadFiles = onUploadFiles,
@@ -176,7 +189,7 @@ fun LandingScreen(
 
 /** Recents | Cloud, as text tabs over a hairline with an accent underline. */
 @Composable
-private fun LibraryTabs(selected: Int, onSelect: (Int) -> Unit) {
+private fun LibraryTabs(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) {
     val colors = PaperTheme.colors
     TabRow(
         selectedTabIndex = selected,
@@ -194,7 +207,7 @@ private fun LibraryTabs(selected: Int, onSelect: (Int) -> Unit) {
         },
         divider = { Hairline() },
     ) {
-        listOf("Recents", "Cloud").forEachIndexed { i, label ->
+        labels.forEachIndexed { i, label ->
             Tab(
                 selected = selected == i,
                 onClick = { onSelect(i) },
@@ -315,5 +328,66 @@ private fun CoverTile(entry: RecentEntry, onOpen: () -> Unit, onForget: () -> Un
             color = colors.muted,
             maxLines = 1,
         )
+    }
+}
+
+/** The Books shelf: covers, title, author and how far you've read. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun BooksPage(
+    books: List<com.paperview.mobile.book.BookEntry>,
+    onOpen: (com.paperview.mobile.book.BookEntry) -> Unit,
+    onRemove: (com.paperview.mobile.book.BookEntry) -> Unit,
+    contentPadding: PaddingValues,
+) {
+    val colors = PaperTheme.colors
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(118.dp),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(
+            start = 20.dp,
+            end = 20.dp,
+            top = 18.dp,
+            bottom = contentPadding.calculateBottomPadding() + 32.dp,
+        ),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        items(books, key = { it.path }) { b ->
+            var menu by remember { mutableStateOf(false) }
+            Column(
+                Modifier
+                    .padding(bottom = 18.dp)
+                    .combinedClickable(onClick = { onOpen(b) }, onLongClick = { menu = true }),
+            ) {
+                Box {
+                    com.paperview.mobile.book.BookCover(b, Modifier.fillMaxWidth().aspectRatio(0.68f))
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Remove from Books", style = MaterialTheme.typography.bodyMedium) },
+                            onClick = { menu = false; onRemove(b) },
+                        )
+                    }
+                }
+                // How far through, as a hairline under the cover.
+                Box(Modifier.fillMaxWidth().height(2.dp).background(colors.hairline)) {
+                    Box(Modifier.fillMaxWidth(b.progress.coerceIn(0f, 1f)).height(2.dp).background(colors.accent))
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    b.title.ifBlank { b.name },
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    listOfNotNull(b.author, "${(b.progress * 100).toInt()}%").joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.muted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
     }
 }
